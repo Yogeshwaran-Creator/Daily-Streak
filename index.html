@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#e3e6e9">
+  <meta name="theme-color" content="#d9dde0">
   <meta name="description" content="A calm, simple space to track your daily study streak and celebrate your progress.">
   <title>Daylight — your study streak</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,7 +21,10 @@
         <span>daylight<span class="brand-period">.</span></span>
       </a>
       <div class="topbar-note"><span class="tiny-sun">✳</span> A little progress, every day</div>
-      <div class="avatar" aria-label="Your study space">✿</div>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark theme" aria-pressed="false">
+        <span class="theme-toggle-icon" id="theme-toggle-icon" aria-hidden="true">☾</span>
+        <span id="theme-toggle-label">Dark mode</span>
+      </button>
     </header>
 
     <main>

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "daylight-study-sessions";
+const THEME_STORAGE_KEY = "daylight-theme";
 const DAILY_GOAL_MINUTES = 120;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -24,7 +25,43 @@ const elements = {
   monthLabel: document.getElementById("month-label"),
   previousMonth: document.getElementById("prev-month"),
   nextMonth: document.getElementById("next-month"),
+  themeToggle: document.getElementById("theme-toggle"),
+  themeToggleIcon: document.getElementById("theme-toggle-icon"),
+  themeToggleLabel: document.getElementById("theme-toggle-label"),
 };
+
+function setTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  elements.themeToggle.setAttribute("aria-pressed", String(isDark));
+  elements.themeToggle.setAttribute("aria-label", `Switch to ${isDark ? "light" : "dark"} theme`);
+  elements.themeToggleIcon.textContent = isDark ? "☼" : "☾";
+  elements.themeToggleLabel.textContent = isDark ? "Light mode" : "Dark mode";
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", isDark ? "#151c19" : "#d9dde0");
+}
+
+function loadTheme() {
+  try {
+    setTheme(localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light");
+  } catch (error) {
+    console.error("Could not load the saved theme.", error);
+    setTheme("light");
+    elements.formMessage.textContent = "Your saved theme couldn't be loaded.";
+    elements.formMessage.classList.add("error");
+  }
+}
+
+elements.themeToggle.addEventListener("click", () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  setTheme(theme);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    console.error("Could not save the selected theme.", error);
+    elements.formMessage.textContent = "Your theme changed, but couldn't be saved for next time.";
+    elements.formMessage.classList.add("error");
+  }
+});
 
 function localDateKey(date) {
   const year = date.getFullYear();
@@ -249,6 +286,7 @@ function removeSession(id) {
   }
   elements.formMessage.textContent = "Session removed.";
   elements.formMessage.classList.remove("error");
+  loadTheme();
   render();
 }
 
