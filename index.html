@@ -100,30 +100,44 @@
             </div>
             <form id="session-form">
               <label for="subject-input">What are you studying?</label>
-              <input id="subject-input" name="subject" type="text" maxlength="50" placeholder="e.g. Biology, Spanish, reading">
-              <div class="form-bottom">
+              <input id="subject-input" name="subject" type="text" maxlength="50" placeholder="e.g. Biology, Spanish, reading" required>
+              <div class="timer-duration-fields">
+                <div class="duration-field">
+                  <label for="hours-input">Hours</label>
+                  <div class="minutes-input-wrap">
+                    <input id="hours-input" name="hours" type="number" min="0" max="24" value="0" required>
+                    <span>hr</span>
+                  </div>
+                </div>
                 <div class="duration-field">
                   <label for="minutes-input">Minutes</label>
                   <div class="minutes-input-wrap">
-                    <input id="minutes-input" name="minutes" type="number" min="1" max="1440" value="30" required>
+                    <input id="minutes-input" name="minutes" type="number" min="0" max="59" value="30" required>
                     <span>min</span>
                   </div>
                 </div>
-                <button class="log-button" type="submit"><span>Log session</span><span aria-hidden="true">↗</span></button>
+              </div>
+              <output class="timer-display" id="timer-display" aria-label="Time remaining">00:30:00</output>
+              <p class="timer-status" id="timer-status" role="status" aria-live="polite">Ready when you are.</p>
+              <div class="timer-controls">
+                <button class="log-button" id="timer-toggle" type="submit">Start timer</button>
+                <button class="timer-reset" id="timer-reset" type="button" disabled>Reset</button>
               </div>
               <p class="form-message" id="form-message" aria-live="polite"></p>
             </form>
           </section>
 
-          <section class="panel sessions-panel">
-            <div class="sessions-heading">
-              <div><p class="eyebrow">RECENT ACTIVITY</p><h2>Your sessions</h2></div>
-              <span class="session-count" id="session-count">0</span>
-            </div>
-            <ul class="session-list" id="session-list"></ul>
-          </section>
         </aside>
       </div>
+
+      <section class="panel history-panel" aria-label="Saved study history">
+        <div class="sessions-heading">
+          <div><p class="eyebrow">YOUR STUDY ARCHIVE</p><h2>Study history</h2></div>
+          <span class="session-count" id="session-count">0</span>
+        </div>
+        <p class="history-note">Every logged session is saved on this device.</p>
+        <ul class="session-list" id="session-list"></ul>
+      </section>
 
       <footer class="footer"><span>Made for the days you show up.</span><span class="footer-flower">✿</span></footer>
     </main>

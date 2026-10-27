@@ -17,7 +17,12 @@ const elements = {
   progressFill: document.getElementById("progress-fill"),
   sessionForm: document.getElementById("session-form"),
   subjectInput: document.getElementById("subject-input"),
+  hoursInput: document.getElementById("hours-input"),
   minutesInput: document.getElementById("minutes-input"),
+  timerDisplay: document.getElementById("timer-display"),
+  timerStatus: document.getElementById("timer-status"),
+  timerToggle: document.getElementById("timer-toggle"),
+  timerReset: document.getElementById("timer-reset"),
   formMessage: document.getElementById("form-message"),
   sessionList: document.getElementById("session-list"),
   sessionCount: document.getElementById("session-count"),
@@ -99,6 +104,12 @@ function readSessions() {
 let sessions = readSessions();
 const today = new Date();
 let displayedMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+let timerState = "idle";
+let timerRemainingMs = 30 * 60 * 1000;
+let timerEndsAt = null;
+let timerDurationMinutes = 30;
+let timerInterval = null;
+let audioContext = null;
 
 function saveSessions() {
   try {
@@ -221,22 +232,19 @@ function renderCalendar() {
 }
 
 function renderSessions() {
-  const todayKey = localDateKey(today);
-  const todaysSessions = sessions
-    .filter((session) => session.date === todayKey)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const savedSessions = [...sessions].sort((a, b) => b.createdAt - a.createdAt);
 
-  elements.sessionCount.textContent = String(todaysSessions.length);
+  elements.sessionCount.textContent = String(savedSessions.length);
   elements.sessionList.replaceChildren();
-  if (!todaysSessions.length) {
+  if (!savedSessions.length) {
     const empty = document.createElement("li");
     empty.className = "empty-sessions";
-    empty.textContent = "No sessions yet today. Log your first one above.";
+    empty.textContent = "No study sessions saved yet. Log your first one above.";
     elements.sessionList.append(empty);
     return;
   }
 
-  todaysSessions.forEach((session) => {
+  savedSessions.forEach((session) => {
     const item = document.createElement("li");
     item.className = "session-item";
 
@@ -252,21 +260,22 @@ function renderSessions() {
     subject.textContent = session.subject || "Study session";
     const meta = document.createElement("div");
     meta.className = "session-meta";
-    meta.textContent = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(session.createdAt));
+    meta.textContent = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(session.createdAt));
     info.append(subject, meta);
 
     const duration = document.createElement("span");
     duration.className = "session-minutes";
-    duration.textContent = `${session.minutes} min`;
+    const hours = Math.floor(session.minutes / 60);
+    const minutes = session.minutes % 60;
+    duration.textContent = [
+      hours ? `${hours} hr${hours === 1 ? "" : "s"}` : "",
+      minutes ? `${minutes} min` : "",
+    ].filter(Boolean).join(" ");
 
-    const removeButton = document.createElement("button");
-    removeButton.className = "delete-session";
-    removeButton.type = "button";
-    removeButton.setAttribute("aria-label", `Remove ${session.subject || "study session"}`);
-    removeButton.textContent = "×";
-    removeButton.addEventListener("click", () => removeSession(session.id));
-
-    item.append(mark, info, duration, removeButton);
+    item.append(mark, info, duration);
     elements.sessionList.append(item);
   });
 }
@@ -277,47 +286,188 @@ function render() {
   renderSessions();
 }
 
-function removeSession(id) {
-  const previousSessions = sessions;
-  sessions = sessions.filter((session) => session.id !== id);
-  if (!saveSessions()) {
-    sessions = previousSessions;
-    return;
-  }
-  elements.formMessage.textContent = "Session removed.";
-  elements.formMessage.classList.remove("error");
-  loadTheme();
-  render();
+function selectedDurationMinutes() {
+  const hours = Number(elements.hoursInput.value);
+  const minutes = Number(elements.minutesInput.value);
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 24 ||
+    minutes < 0 ||
+    minutes > 59
+  ) return null;
+
+  const durationMinutes = hours * 60 + minutes;
+  return durationMinutes >= 1 && durationMinutes <= 1440 ? durationMinutes : null;
 }
 
-elements.sessionForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const minutes = Number(elements.minutesInput.value);
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
-    elements.formMessage.textContent = "Enter a whole number of minutes between 1 and 1440.";
-    elements.formMessage.classList.add("error");
-    elements.minutesInput.focus();
+function formatTimerTime(milliseconds) {
+  const totalSeconds = Math.ceil(Math.max(0, milliseconds) / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function renderTimer() {
+  elements.timerDisplay.textContent = formatTimerTime(timerRemainingMs);
+  elements.timerToggle.textContent = timerState === "running"
+    ? "Pause timer"
+    : timerState === "paused" ? "Resume timer" : "Start timer";
+  elements.timerReset.disabled = timerState === "idle";
+  const isActive = timerState === "running" || timerState === "paused";
+  elements.hoursInput.disabled = isActive;
+  elements.minutesInput.disabled = isActive;
+  elements.subjectInput.disabled = isActive;
+}
+
+function initializeAudio() {
+  if (audioContext) return true;
+  if (!window.AudioContext) {
+    return false;
+  }
+  try {
+    audioContext = new AudioContext();
+  } catch (error) {
+    console.error("Could not initialize timer alarm audio.", error);
+    return false;
+  }
+  audioContext.resume().catch((error) => {
+    console.error("Could not enable timer alarm audio.", error);
+  });
+  return true;
+}
+
+function playCompletionAlarm() {
+  if (!audioContext) {
+    elements.timerStatus.textContent = "Timer complete! Sound is unavailable in this browser.";
     return;
   }
+
+  audioContext.resume().then(() => {
+    const startAt = audioContext.currentTime;
+    for (let beep = 0; beep < 3; beep += 1) {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const beepStart = startAt + beep * 0.4;
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, beepStart);
+      gain.gain.exponentialRampToValueAtTime(0.2, beepStart + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepStart + 0.22);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(beepStart);
+      oscillator.stop(beepStart + 0.23);
+    }
+  }).catch((error) => {
+    console.error("Could not play the timer alarm.", error);
+    elements.timerStatus.textContent = "Timer complete, but the alarm couldn't play.";
+  });
+}
+
+function finishTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  timerRemainingMs = 0;
+  timerEndsAt = null;
+  timerState = "completed";
+  renderTimer();
+  elements.timerStatus.textContent = "Time's up!";
 
   const session = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     date: localDateKey(new Date()),
-    minutes,
+    minutes: timerDurationMinutes,
     subject: elements.subjectInput.value.trim(),
     createdAt: Date.now(),
   };
   sessions.push(session);
   if (!saveSessions()) {
     sessions.pop();
+  } else {
+    elements.formMessage.textContent = "Session logged. Nice work!";
+    elements.formMessage.classList.remove("error");
+    render();
+  }
+  playCompletionAlarm();
+}
+
+function updateTimer() {
+  if (timerState !== "running" || timerEndsAt === null) return;
+  timerRemainingMs = timerEndsAt - Date.now();
+  if (timerRemainingMs <= 0) {
+    finishTimer();
+    return;
+  }
+  renderTimer();
+}
+
+function startTimer() {
+  const soundAvailable = initializeAudio();
+  timerEndsAt = Date.now() + timerRemainingMs;
+  timerState = "running";
+  elements.timerStatus.textContent = soundAvailable
+    ? "Timer running. Stay focused!"
+    : "Timer running. Sound is unavailable in this browser.";
+  timerInterval = window.setInterval(updateTimer, 250);
+  updateTimer();
+}
+
+elements.sessionForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (timerState === "running") {
+    updateTimer();
+    if (timerState !== "running") return;
+    timerRemainingMs = timerEndsAt - Date.now();
+    timerEndsAt = null;
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerState = "paused";
+    elements.timerStatus.textContent = "Timer paused.";
+    renderTimer();
     return;
   }
 
-  elements.formMessage.textContent = "Session logged. Nice work!";
+  if (timerState === "paused") {
+    startTimer();
+    return;
+  }
+
+  const subject = elements.subjectInput.value.trim();
+  if (!subject) {
+    elements.formMessage.textContent = "Enter what you're studying before starting the timer.";
+    elements.formMessage.classList.add("error");
+    elements.subjectInput.focus();
+    return;
+  }
+
+  const durationMinutes = selectedDurationMinutes();
+  if (durationMinutes === null) {
+    elements.formMessage.textContent = "Set a duration between 1 minute and 24 hours.";
+    elements.formMessage.classList.add("error");
+    elements.minutesInput.focus();
+    return;
+  }
+
+  timerDurationMinutes = durationMinutes;
+  timerRemainingMs = durationMinutes * 60 * 1000;
+  elements.formMessage.textContent = "";
   elements.formMessage.classList.remove("error");
-  elements.subjectInput.value = "";
-  elements.minutesInput.value = "30";
-  render();
+  startTimer();
+});
+
+elements.timerReset.addEventListener("click", () => {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  timerEndsAt = null;
+  timerState = "idle";
+  const durationMinutes = selectedDurationMinutes();
+  timerRemainingMs = (durationMinutes || 0) * 60 * 1000;
+  elements.timerStatus.textContent = "Timer reset. Set a duration and start when ready.";
+  elements.formMessage.textContent = "";
+  elements.formMessage.classList.remove("error");
+  renderTimer();
 });
 
 elements.previousMonth.addEventListener("click", () => {
@@ -334,3 +484,4 @@ elements.nextMonth.addEventListener("click", () => {
 });
 
 render();
+renderTimer();
